@@ -544,10 +544,12 @@ Retry:
 
 				reasons := []string{apns.ReasonBadDeviceToken, apns.ReasonDeviceTokenNotForTopic, apns.ReasonUnregistered}
 
-				for _, a := range reasons {
-					if a == res.Reason {
-						go RemoveToken(token, userId, "ios")
-						break
+				if res != nil {
+					for _, a := range reasons {
+						if a == res.Reason {
+							go RemoveToken(token, userId, "ios")
+							break
+						}
 					}
 				}
 			}
