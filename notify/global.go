@@ -25,9 +25,9 @@ var (
 			Timeout: 5 * time.Second,
 		}).Dial,
 		TLSHandshakeTimeout: 5 * time.Second,
-		MaxIdleConns:        5,
-		MaxIdleConnsPerHost: 5,
-		MaxConnsPerHost:     20,
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 10,
+		MaxConnsPerHost:     50,
 		Proxy:               http.ProxyFromEnvironment, // Support proxy
 	}
 	feedbackClient = &http.Client{

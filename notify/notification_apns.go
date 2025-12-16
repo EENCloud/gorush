@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	apns "github.com/sideshow/apns2"
@@ -513,6 +514,13 @@ Retry:
 	notification := GetIOSNotification(req)
 	client := getApnsClient(cfg, req)
 
+	// Log batch information
+	tokenCount := len(req.Tokens)
+	logx.LogAccess.Infof("Processing iOS push batch: %d tokens (retry attempt: %d/%d)", tokenCount, retryCount, maxRetry)
+
+	// Track batch results
+	var successCount, errorCount, nilResponseCount int32
+
 	var wg sync.WaitGroup
 	for i := 0; i < len(req.Tokens); i++ {
 		token := req.Tokens[i]
@@ -525,6 +533,14 @@ Retry:
 			// send ios notification
 			res, err := client.PushWithContext(ctx, &notification)
 			if err != nil || (res != nil && res.StatusCode != http.StatusOK) {
+				// Log nil response case (network errors, timeouts, context cancellation)
+				if res == nil {
+					atomic.AddInt32(&nilResponseCount, 1)
+					logx.LogError.Errorf("iOS push failed with nil response for token %s, userId %s: %v", token, userId, err)
+				}
+
+				atomic.AddInt32(&errorCount, 1)
+
 				if err == nil {
 					// error message:
 					// ref: https://github.com/sideshow/apns2/blob/master/response.go#L14-L65
@@ -551,10 +567,14 @@ Retry:
 							break
 						}
 					}
+				} else {
+					// Log when we skip token removal due to nil response
+					logx.LogError.Warnf("Skipping token removal check for token %s (nil response, likely network/timeout error)", token)
 				}
 			}
 
 			if res != nil && res.Sent() {
+				atomic.AddInt32(&successCount, 1)
 				logPush(cfg, core.SucceededPush, token, userId, req, nil)
 				status.StatStorage.AddIosSuccess(1)
 			}
@@ -566,6 +586,10 @@ Retry:
 	}
 
 	wg.Wait()
+
+	// Log batch summary
+	logx.LogAccess.Infof("iOS push batch complete: %d tokens processed | Success: %d | Errors: %d | Nil responses: %d | Retrying: %d",
+		tokenCount, successCount, errorCount, nilResponseCount, len(newTokens))
 
 	if len(newTokens) > 0 && retryCount < maxRetry {
 		retryCount++
