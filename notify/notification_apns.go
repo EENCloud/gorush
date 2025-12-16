@@ -522,7 +522,7 @@ Retry:
 	var successCount, errorCount, nilResponseCount int32
 
 	var wg sync.WaitGroup
-	for i := 0; i < len(req.Tokens); i++ {
+	for i := 0; i < tokenCount; i++ {
 		token := req.Tokens[i]
 		userId := req.UserIds[i]
 		// occupy push slot
@@ -533,44 +533,42 @@ Retry:
 			// send ios notification
 			res, err := client.PushWithContext(ctx, &notification)
 			if err != nil || (res != nil && res.StatusCode != http.StatusOK) {
-				// Log nil response case (network errors, timeouts, context cancellation)
+				// Handle nil response case (network errors, timeouts, context cancellation)
 				if res == nil {
 					atomic.AddInt32(&nilResponseCount, 1)
 					logx.LogError.Errorf("iOS push failed with nil response for token %s, userId %s: %v", token, userId, err)
-				}
+					// Log when we skip token removal due to nil response
+					logx.LogError.Warnf("Skipping token removal check for token %s (nil response, likely network/timeout error)", token)
+				} else {
+					// APNS returned an error response
+					atomic.AddInt32(&errorCount, 1)
 
-				atomic.AddInt32(&errorCount, 1)
+					// Use APNS reason as error message
+					if err == nil {
+						// error message:
+						// ref: https://github.com/sideshow/apns2/blob/master/response.go#L14-L65
+						err = errors.New(res.Reason)
+					}
 
-				if err == nil {
-					// error message:
-					// ref: https://github.com/sideshow/apns2/blob/master/response.go#L14-L65
-					err = errors.New(res.Reason)
-				}
+					// Check if we should retry (server errors only)
+					if res.StatusCode >= http.StatusInternalServerError {
+						newTokens = append(newTokens, token)
+					}
 
-				// apns server error
-				errLog := logPush(cfg, core.FailedPush, token, userId, req, err)
-				resp.Logs = append(resp.Logs, errLog)
-
-				status.StatStorage.AddIosError(1)
-				// We should retry only "retryable" statuses. More info about response:
-				// See https://apple.co/3AdNane (Handling Notification Responses from APNs)
-				if res != nil && res.StatusCode >= http.StatusInternalServerError {
-					newTokens = append(newTokens, token)
-				}
-
-				reasons := []string{apns.ReasonBadDeviceToken, apns.ReasonDeviceTokenNotForTopic, apns.ReasonUnregistered}
-
-				if res != nil {
+					// Check if token should be removed (bad token errors)
+					reasons := []string{apns.ReasonBadDeviceToken, apns.ReasonDeviceTokenNotForTopic, apns.ReasonUnregistered}
 					for _, a := range reasons {
 						if a == res.Reason {
 							go RemoveToken(token, userId, "ios")
 							break
 						}
 					}
-				} else {
-					// Log when we skip token removal due to nil response
-					logx.LogError.Warnf("Skipping token removal check for token %s (nil response, likely network/timeout error)", token)
 				}
+
+				// Log push failure
+				errLog := logPush(cfg, core.FailedPush, token, userId, req, err)
+				resp.Logs = append(resp.Logs, errLog)
+				status.StatStorage.AddIosError(1)
 			}
 
 			if res != nil && res.Sent() {
@@ -587,9 +585,9 @@ Retry:
 
 	wg.Wait()
 
-	// Log batch summary
-	logx.LogAccess.Infof("iOS push batch complete: %d tokens processed | Success: %d | Errors: %d | Nil responses: %d | Retrying: %d",
-		tokenCount, successCount, errorCount, nilResponseCount, len(newTokens))
+	// Log batch summary (use atomic loads for proper memory ordering)
+	logx.LogAccess.Infof("iOS push batch complete: %d tokens processed | Success: %d | APNS errors: %d | Network/timeout errors: %d | Retrying: %d",
+		tokenCount, atomic.LoadInt32(&successCount), atomic.LoadInt32(&errorCount), atomic.LoadInt32(&nilResponseCount), len(newTokens))
 
 	if len(newTokens) > 0 && retryCount < maxRetry {
 		retryCount++
