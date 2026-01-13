@@ -1,0 +1,27 @@
+name: gorush
+id: ari:cloud:compass:4337fc0d-aa55-4ff9-bd75-ef7117ff9381:component/4c6fdffe-fa4a-46ef-9e6f-a1aa05480c89/f32a7b5f-200b-43cb-8fde-5ffdacfca41e
+description: A push notification server written in Go (Golang).
+configVersion: 1
+typeId: SERVICE
+ownerId: null
+fields:
+  tier: 4
+links:
+  - name: null
+    type: REPOSITORY
+    url: https://github.com/EENCloud/gorush
+relationships:
+  DEPENDS_ON: []
+labels:
+  - language:go
+  - source:github
+customFields:
+  - name: Audit status
+    type: single_select
+    value: null
+  - name: Production deployed
+    type: boolean
+    value: false
+  - name: Requires audit
+    type: boolean
+    value: false
