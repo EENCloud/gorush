@@ -49,3 +49,10 @@ ports:
 tolerations: []
 
 affinity: {}
+
+podAntiAffinity:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+  maxUnavailable: 1
