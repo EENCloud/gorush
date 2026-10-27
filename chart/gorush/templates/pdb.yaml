@@ -1,0 +1,17 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ template "gorush.fullname" . }}
+  labels:
+    app: {{ template "gorush.name" . }}
+    chart: {{ template "gorush.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: {{ template "gorush.name" . }}
+      release: {{ .Release.Name }}
+{{- end }}

@@ -45,9 +45,20 @@ spec:
       nodeSelector:
 {{ toYaml . | indent 8 }}
     {{- end }}
-    {{- with .Values.affinity }}
+    {{- if or .Values.affinity .Values.podAntiAffinity.enabled }}
       affinity:
+    {{- with .Values.affinity }}
 {{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- if .Values.podAntiAffinity.enabled }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: {{ template "gorush.name" . }}
+                release: {{ .Release.Name }}
+            topologyKey: kubernetes.io/hostname
+    {{- end }}
     {{- end }}
     {{- with .Values.tolerations }}
       tolerations:
